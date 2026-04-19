@@ -1,0 +1,60 @@
+title: MsMpEng.exe Anomalous File Write to C:\Windows\System32
+id: c3d8a562-33dg-6g4c-bd9c-redsun003
+status: experimental
+description: >
+  Detects Windows Defender's antimalware engine process (MsMpEng.exe) writing
+  files into C:\Windows\System32 outside of expected Defender platform update
+  paths. This is the direct behavioral outcome of the RedSun exploit's NTFS
+  junction redirect: after the attacker-controlled reparse point is in place,
+  Defender resumes its remediation write and follows the junction into System32,
+  overwriting a target binary with SYSTEM-level privileges.
+  Legitimate Defender remediation and platform updates do NOT result in MsMpEng.exe
+  writing arbitrary executables into System32. This is a critical-fidelity signal
+  with a very low expected false positive rate outside of Defender engine
+  self-update operations, which use separate installer processes.
+references:
+  - https://www.bleepingcomputer.com/news/microsoft/new-microsoft-defender-redsun-zero-day-poc-grants-system-privileges/
+  - https://www.cloudsek.com/blog/redsun-windows-0day-when-defender-becomes-the-attacker
+  - https://cybersecuritynews.com/defender-0-day-redsun/
+author: Cybersecurity Architect
+date: 2026-04-19
+tags:
+  - attack.privilege_escalation
+  - attack.t1068
+  - attack.t1574.012
+  - cve.2026-33825
+logsource:
+  product: windows
+  category: file_event
+  definition: >
+    Requires Sysmon Event ID 11 (FileCreate) with the Image field populated via
+    Sysmon configuration, or Microsoft Defender for Endpoint FileCreated events
+    with InitiatingProcessFileName context. Ensure Sysmon is configured to capture
+    file events for the System32 path with process attribution.
+detection:
+  selection:
+    EventID: 11
+    Image|endswith: '\MsMpEng.exe'
+    TargetFilename|startswith: 'C:\Windows\System32\'
+  filter_known_defender_update_paths:
+    TargetFilename|endswith:
+      - '\MpSigStub.exe'
+      - '\MsMpEng.exe'
+      - '\mpengine.dll'
+      - '\MpClient.dll'
+      - '\MpOAV.dll'
+  high_value_targets:
+    TargetFilename|contains:
+      - 'TieringEngineService.exe'
+      - 'svchost.exe'
+      - 'lsass.exe'
+      - 'services.exe'
+      - 'winlogon.exe'
+      - 'csrss.exe'
+  condition: selection and not filter_known_defender_update_paths
+falsepositives:
+  - Rare in-place Defender engine self-update sequences on non-standard configurations
+  - Validate any firing against Windows Update activity logs and Defender platform
+    version change events (look for MpCopyAccelerator.exe or MpUXAgent.exe as the
+    legitimate update installer process)
+level: critical

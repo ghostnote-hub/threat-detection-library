@@ -1,0 +1,45 @@
+title: Suspicious Cloud Files Sync Root Registration via CfRegisterSyncRoot
+id: a1f3c290-11be-4e2a-9b7a-redsun001
+status: experimental
+description: >
+  Detects CfRegisterSyncRoot calls from processes outside of known legitimate
+  cloud sync clients. This is a prerequisite step in the RedSun Windows Defender
+  LPE exploit chain, which abuses the Windows Cloud Files API (cldapi.dll) to
+  stage a cloud-tagged file for Defender to detect and subsequently rewrite
+  through a redirected path into C:\Windows\System32.
+  The known PoC uses a provider name of "SERIOUSLYMSFT" which will not appear
+  in any legitimate deployment.
+references:
+  - https://www.bleepingcomputer.com/news/microsoft/new-microsoft-defender-redsun-zero-day-poc-grants-system-privileges/
+  - https://www.cloudsek.com/blog/redsun-windows-0day-when-defender-becomes-the-attacker
+  - https://nefariousplan.com/posts/redsun-windows-defender-system-write/
+author: Cybersecurity Architect
+date: 2026-04-19
+tags:
+  - attack.privilege_escalation
+  - attack.t1068
+  - cve.2026-33825
+logsource:
+  product: windows
+  category: process_access
+  definition: >
+    Requires ETW tracing on the Microsoft-Windows-CloudFiles provider, or
+    EDR telemetry capturing module loads and API call context from cldapi.dll.
+    Microsoft Defender for Endpoint kernel sensor logs this activity natively.
+detection:
+  selection:
+    Image|endswith: '\MsMpEng.exe'
+    CallTrace|contains: 'cldapi.dll'
+  filter_legit_sync:
+    ParentImage|endswith:
+      - '\OneDrive.exe'
+      - '\Dropbox.exe'
+      - '\Box.exe'
+      - '\GoogleDriveFS.exe'
+      - '\iCloudDrive.exe'
+  condition: selection and not filter_legit_sync
+falsepositives:
+  - Third-party cloud sync or backup clients not represented in the filter list
+  - Enterprise storage agents that register Cloud Files sync roots legitimately
+  - Development and testing environments building Cloud Files integrations
+level: high

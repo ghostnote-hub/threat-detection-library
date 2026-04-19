@@ -1,0 +1,56 @@
+title: Unexpected SYSTEM Process Execution Following Defender Cloud Files Write
+id: d4e9b673-44eh-7h5d-ce0d-redsun004
+status: experimental
+description: >
+  Detects the final execution stage of the RedSun exploit chain: a SYSTEM-privileged
+  process spawned in a context consistent with an overwritten service binary being
+  executed by Windows service management. After MsMpEng.exe writes attacker-controlled
+  content into C:\Windows\System32 via NTFS junction redirect, the target binary
+  (commonly TieringEngineService.exe) is executed by services.exe or svchost.exe
+  with SYSTEM privileges.
+  Also covers the scenario where MsMpEng.exe directly spawns a child process with
+  SYSTEM integrity, which has no legitimate precedent in normal Defender operation.
+  This rule should be correlated with Rule redsun003 (MsMpEng.exe System32 write)
+  for highest-confidence alerting.
+references:
+  - https://www.bleepingcomputer.com/news/microsoft/new-microsoft-defender-redsun-zero-day-poc-grants-system-privileges/
+  - https://blackswan-cybersecurity.com/threat-advisory-redsun-zero-day-windows-defender-april-17-2026/
+  - https://cybersecuritynews.com/defender-0-day-redsun/
+author: Cybersecurity Architect
+date: 2026-04-19
+tags:
+  - attack.privilege_escalation
+  - attack.execution
+  - attack.t1068
+  - attack.t1569.002
+  - cve.2026-33825
+logsource:
+  product: windows
+  category: process_creation
+  definition: >
+    Requires Sysmon Event ID 1 or Windows Security Event ID 4688 with full
+    command line and parent process logging enabled. IntegrityLevel population
+    requires Sysmon; EID 4688 alone is insufficient for integrity-level filtering.
+detection:
+  selection_defender_child:
+    EventID: 1
+    ParentImage|endswith: '\MsMpEng.exe'
+    IntegrityLevel: 'System'
+  selection_tiering_anomaly:
+    EventID: 1
+    Image|endswith: '\TieringEngineService.exe'
+    User: 'NT AUTHORITY\SYSTEM'
+    ParentImage|endswith:
+      - '\services.exe'
+      - '\svchost.exe'
+  filter_legitimate_tiering:
+    CommandLine|contains:
+      - 'StorageTiering'
+      - '-Embedding'
+  condition: (selection_defender_child or selection_tiering_anomaly) and not filter_legitimate_tiering
+falsepositives:
+  - Legitimate Storage Tiering service restarts on Windows Server deployments with
+    tiered storage volumes configured — validate against known storage infrastructure
+  - Correlate with redsun003 file write rule to confirm the full exploit chain
+    before treating as a standalone alert
+level: critical

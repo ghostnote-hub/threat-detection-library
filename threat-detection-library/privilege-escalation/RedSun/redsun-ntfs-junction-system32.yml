@@ -1,0 +1,56 @@
+title: NTFS Junction Point Created in User-Writable Directory Targeting System32
+id: b2e7f451-22cf-5f3b-ac8b-redsun002
+status: experimental
+description: >
+  Detects creation of NTFS directory junctions or mount point reparse points
+  originating from user-writable locations such as %TEMP% or %APPDATA% where
+  the reparse target resolves to C:\Windows\System32 or other protected system
+  paths. This is the path-redirection stage of the RedSun exploit chain — the
+  junction is stamped while an oplock holds Defender's remediation write
+  suspended, causing MsMpEng.exe to subsequently write attacker-controlled
+  content into System32 under SYSTEM privileges.
+  Standard users have no legitimate reason to create mount point reparse points
+  targeting protected system directories.
+references:
+  - https://www.bleepingcomputer.com/news/microsoft/new-microsoft-defender-redsun-zero-day-poc-grants-system-privileges/
+  - https://nefariousplan.com/posts/redsun-windows-defender-system-write/
+  - https://www.neosecurity.nl/en/blog/windows-defender-bluehammer-redsun-cve-2026-33825
+author: Cybersecurity Architect
+date: 2026-04-19
+tags:
+  - attack.privilege_escalation
+  - attack.defense_evasion
+  - attack.t1068
+  - attack.t1574
+  - cve.2026-33825
+logsource:
+  product: windows
+  category: file_event
+  definition: >
+    Requires Sysmon Event ID 11 with reparse/junction point enrichment enabled,
+    or Microsoft Defender for Endpoint FileCreated/DirectoryCreated telemetry.
+    EDR kernel sensor FSCTL_SET_REPARSE_POINT logging provides the highest
+    fidelity signal for this detection.
+detection:
+  selection_junction:
+    EventID: 11
+    TargetFilename|startswith:
+      - 'C:\Users\'
+      - 'C:\Windows\Temp\'
+    TargetFilename|contains:
+      - 'AppData\Local\Temp'
+      - 'AppData\Roaming'
+    ReparseTarget|startswith:
+      - 'C:\Windows\System32'
+      - 'C:\Windows\SysWOW64'
+      - 'C:\Windows\System'
+  filter_admin_context:
+    User|contains:
+      - 'SYSTEM'
+      - 'Administrator'
+  condition: selection_junction and not filter_admin_context
+falsepositives:
+  - Legitimate developer tooling that creates junctions during installation or build processes
+  - Symlink-based package managers (certain Node.js or Python toolchains)
+  - Validate against change management windows and known software deployment activity
+level: high
